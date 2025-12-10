@@ -33,6 +33,12 @@ interface PackageItem {
   price: number;
   duration_minutes: number | null;
   created_at: string;
+  package_spareparts?: {
+    quantity: number | null;
+    spareparts: {
+      price: number;
+    } | null;
+  }[];
 }
 
 interface Sparepart {
@@ -81,7 +87,15 @@ const Packages = () => {
     try {
       const { data, error } = await supabase
         .from('packages')
-        .select('*')
+        .select(`
+          *,
+          package_spareparts (
+            quantity,
+            spareparts (
+              price
+            )
+          )
+        `)
         .order('name');
 
       if (error) throw error;
@@ -276,6 +290,15 @@ const Packages = () => {
     }).format(amount);
   };
 
+  const calculateSparepartTotal = (packageSpareparts: PackageItem['package_spareparts']) => {
+    if (!packageSpareparts) return 0;
+    return packageSpareparts.reduce((sum, item) => {
+      const price = item.spareparts?.price || 0;
+      const quantity = item.quantity || 0;
+      return sum + (price * quantity);
+    }, 0);
+  };
+
   const columns = [
     {
       key: 'name',
@@ -305,13 +328,37 @@ const Packages = () => {
       ),
     },
     {
-      key: 'price',
-      header: 'Harga',
+      key: 'service_price',
+      header: 'Harga Jasa',
       render: (pkg: PackageItem) => (
-        <span className="font-semibold text-accent">
+        <span className="text-muted-foreground">
           {formatCurrency(pkg.price)}
         </span>
       ),
+    },
+    {
+      key: 'sparepart_price',
+      header: 'Total Sparepart',
+      render: (pkg: PackageItem) => {
+        const total = calculateSparepartTotal(pkg.package_spareparts);
+        return (
+          <span className="text-muted-foreground">
+            {formatCurrency(total)}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'total_price',
+      header: 'Total Estimasi',
+      render: (pkg: PackageItem) => {
+        const sparepartTotal = calculateSparepartTotal(pkg.package_spareparts);
+        return (
+          <span className="font-semibold text-accent">
+            {formatCurrency(pkg.price + sparepartTotal)}
+          </span>
+        );
+      },
     },
     {
       key: 'actions',
