@@ -15,9 +15,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Package, Pencil, Trash2, Clock } from 'lucide-react';
+import { Package, Pencil, Trash2, Clock, Plus, X } from 'lucide-react';
 
 interface PackageItem {
   package_id: string;
@@ -26,6 +33,19 @@ interface PackageItem {
   price: number;
   duration_minutes: number | null;
   created_at: string;
+}
+
+interface Sparepart {
+  sparepart_id: string;
+  name: string;
+  price: number;
+}
+
+interface SelectedSparepart {
+  sparepart_id: string;
+  name: string;
+  quantity: number;
+  price: number;
 }
 
 const Packages = () => {
@@ -42,12 +62,19 @@ const Packages = () => {
     duration_minutes: '',
   });
 
+  // Spare parts management state
+  const [availableSpareparts, setAvailableSpareparts] = useState<Sparepart[]>([]);
+  const [selectedSpareparts, setSelectedSpareparts] = useState<SelectedSparepart[]>([]);
+  const [currentSparepartId, setCurrentSparepartId] = useState<string>('');
+  const [currentSparepartQty, setCurrentSparepartQty] = useState<string>('1');
+
   useEffect(() => {
     if (!isStaffOrOwner) {
       navigate('/dashboard');
       return;
     }
     fetchPackages();
+    fetchSpareparts();
   }, [isStaffOrOwner, navigate]);
 
   const fetchPackages = async () => {
@@ -67,11 +94,87 @@ const Packages = () => {
     }
   };
 
+  const fetchSpareparts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('spareparts')
+        .select('sparepart_id, name, price')
+        .order('name');
+
+      if (error) throw error;
+      setAvailableSpareparts(data || []);
+    } catch (error) {
+      console.error('Error fetching spareparts:', error);
+    }
+  };
+
+  const fetchPackageSpareparts = async (packageId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('package_spareparts')
+        .select('sparepart_id, quantity, spareparts(name, price)')
+        .eq('package_id', packageId);
+
+      if (error) throw error;
+
+      const formattedSpareparts: SelectedSparepart[] = (data || []).map((item: any) => ({
+        sparepart_id: item.sparepart_id,
+        name: item.spareparts?.name || 'Unknown',
+        quantity: item.quantity,
+        price: item.spareparts?.price || 0,
+      }));
+
+      setSelectedSpareparts(formattedSpareparts);
+    } catch (error) {
+      console.error('Error fetching package spareparts:', error);
+      toast.error('Gagal memuat sparepart paket');
+    }
+  };
+
+  const handleAddSparepart = () => {
+    if (!currentSparepartId) return;
+
+    const sparepart = availableSpareparts.find(s => s.sparepart_id === currentSparepartId);
+    if (!sparepart) return;
+
+    const quantity = parseInt(currentSparepartQty) || 1;
+    
+    // Check if already added
+    const existingIndex = selectedSpareparts.findIndex(s => s.sparepart_id === currentSparepartId);
+    
+    if (existingIndex >= 0) {
+      // Update quantity
+      const updated = [...selectedSpareparts];
+      updated[existingIndex].quantity += quantity;
+      setSelectedSpareparts(updated);
+    } else {
+      // Add new
+      setSelectedSpareparts([
+        ...selectedSpareparts,
+        {
+          sparepart_id: sparepart.sparepart_id,
+          name: sparepart.name,
+          quantity: quantity,
+          price: sparepart.price,
+        }
+      ]);
+    }
+
+    setCurrentSparepartId('');
+    setCurrentSparepartQty('1');
+  };
+
+  const handleRemoveSparepart = (id: string) => {
+    setSelectedSpareparts(selectedSpareparts.filter(s => s.sparepart_id !== id));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    let packageId = editingPackage?.package_id;
 
     try {
       if (editingPackage) {
+        // Update package details
         const { error } = await supabase
           .from('packages')
           .update({
@@ -85,20 +188,49 @@ const Packages = () => {
         if (error) throw error;
         toast.success('Paket berhasil diperbarui');
       } else {
-        const { error } = await supabase.from('packages').insert({
+        // Insert new package
+        const { data, error } = await supabase.from('packages').insert({
           name: formData.name,
           description: formData.description || null,
           price: parseFloat(formData.price) || 0,
           duration_minutes: formData.duration_minutes ? parseInt(formData.duration_minutes) : null,
-        });
+        }).select('package_id').single();
 
         if (error) throw error;
+        packageId = data.package_id;
         toast.success('Paket berhasil ditambahkan');
+      }
+
+      // Handle spare parts
+      if (packageId) {
+        // First delete existing
+        const { error: deleteError } = await supabase
+          .from('package_spareparts')
+          .delete()
+          .eq('package_id', packageId);
+        
+        if (deleteError) throw deleteError;
+
+        // Then insert new ones
+        if (selectedSpareparts.length > 0) {
+          const { error: insertError } = await supabase
+            .from('package_spareparts')
+            .insert(
+              selectedSpareparts.map(s => ({
+                package_id: packageId,
+                sparepart_id: s.sparepart_id,
+                quantity: s.quantity
+              }))
+            );
+          
+          if (insertError) throw insertError;
+        }
       }
 
       setDialogOpen(false);
       setEditingPackage(null);
       setFormData({ name: '', description: '', price: '', duration_minutes: '' });
+      setSelectedSpareparts([]);
       fetchPackages();
     } catch (error) {
       console.error('Error saving package:', error);
@@ -114,6 +246,7 @@ const Packages = () => {
       price: pkg.price.toString(),
       duration_minutes: pkg.duration_minutes?.toString() || '',
     });
+    fetchPackageSpareparts(pkg.package_id);
     setDialogOpen(true);
   };
 
@@ -223,6 +356,7 @@ const Packages = () => {
             onClick: () => {
               setEditingPackage(null);
               setFormData({ name: '', description: '', price: '', duration_minutes: '' });
+              setSelectedSpareparts([]);
               setDialogOpen(true);
             },
           }}
@@ -237,56 +371,132 @@ const Packages = () => {
         />
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle className="font-display">
                 {editingPackage ? 'Edit Paket' : 'Tambah Paket'}
               </DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nama Paket *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Paket Service Ringan"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Deskripsi</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Deskripsi paket"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-muted-foreground border-b pb-2">Informasi Dasar</h3>
                 <div className="space-y-2">
-                  <Label htmlFor="price">Harga (Rp) *</Label>
+                  <Label htmlFor="name">Nama Paket *</Label>
                   <Input
-                    id="price"
-                    type="number"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    placeholder="150000"
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Paket Service Ringan"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="duration_minutes">Durasi (menit)</Label>
-                  <Input
-                    id="duration_minutes"
-                    type="number"
-                    value={formData.duration_minutes}
-                    onChange={(e) => setFormData({ ...formData, duration_minutes: e.target.value })}
-                    placeholder="60"
+                  <Label htmlFor="description">Deskripsi</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Deskripsi paket"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="price">Harga Jasa (Rp) *</Label>
+                    <Input
+                      id="price"
+                      type="number"
+                      value={formData.price}
+                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                      placeholder="150000"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="duration_minutes">Durasi (menit)</Label>
+                    <Input
+                      id="duration_minutes"
+                      type="number"
+                      value={formData.duration_minutes}
+                      onChange={(e) => setFormData({ ...formData, duration_minutes: e.target.value })}
+                      placeholder="60"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-end gap-3 pt-4">
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-sm font-medium text-muted-foreground">Sparepart Termasuk</h3>
+                  <Badge variant="outline">{selectedSpareparts.length} item</Badge>
+                </div>
+                
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 space-y-2">
+                    <Label>Pilih Sparepart</Label>
+                    <Select value={currentSparepartId} onValueChange={setCurrentSparepartId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih sparepart..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableSpareparts.map((item) => (
+                          <SelectItem key={item.sparepart_id} value={item.sparepart_id}>
+                            {item.name} - {formatCurrency(item.price)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-24 space-y-2">
+                    <Label>Jumlah</Label>
+                    <Input
+                      type="number"
+                      value={currentSparepartQty}
+                      onChange={(e) => setCurrentSparepartQty(e.target.value)}
+                      min="1"
+                    />
+                  </div>
+                  <Button type="button" onClick={handleAddSparepart} disabled={!currentSparepartId}>
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                {selectedSpareparts.length > 0 && (
+                  <div className="space-y-2 bg-muted/30 p-3 rounded-lg">
+                    {selectedSpareparts.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between bg-background p-2 rounded border">
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-sm">{item.name}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            x{item.quantity}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground">
+                            {formatCurrency(item.price * item.quantity)}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive"
+                            onClick={() => handleRemoveSparepart(item.sparepart_id)}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-2 border-t mt-2">
+                      <span className="text-sm font-semibold">Total Sparepart</span>
+                      <span className="text-sm font-semibold">
+                        {formatCurrency(selectedSpareparts.reduce((sum, item) => sum + (item.price * item.quantity), 0))}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   Batal
                 </Button>
