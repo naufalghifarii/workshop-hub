@@ -85,11 +85,15 @@ const Invoices = () => {
       header: 'Aksi',
       render: (invoice: Invoice) => (
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon">
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/invoices/${invoice.invoice_parent_id}`);
+            }}
+          >
             <Eye className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="icon">
-            <Printer className="w-4 h-4" />
           </Button>
         </div>
       ),
@@ -105,7 +109,7 @@ const Invoices = () => {
           icon={FileText}
           action={isStaffOrOwner ? {
             label: 'Buat Invoice',
-            onClick: () => toast.info('Fitur buat invoice akan segera hadir'),
+            onClick: () => navigate('/invoices/new'),
             icon: Plus,
           } : undefined}
         />
