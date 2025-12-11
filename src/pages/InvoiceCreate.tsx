@@ -245,7 +245,6 @@ const InvoiceCreate = () => {
           invoice_number: invoiceNumber,
           date: invoiceDate,
           total_amount: calculateTotal(),
-          discount: parseFloat(discount) || 0,
           notes: notes,
         })
         .select('invoice_parent_id')
@@ -257,7 +256,7 @@ const InvoiceCreate = () => {
       const details = invoiceItems.map(item => ({
         invoice_parent_id: invoice.invoice_parent_id,
         item_type: item.type, // Note: We need to map to columns package_id, etc.
-        package_id: item.type === 'package' ? item.id : null,
+        package_id: item.type === 'package' ? item.id : (item.package_id || null),
         service_id: item.type === 'service' ? item.id : null,
         sparepart_id: item.type === 'sparepart' ? item.id : null,
         quantity: item.quantity,
@@ -278,9 +277,9 @@ const InvoiceCreate = () => {
       toast.success('Invoice berhasil dibuat');
       navigate('/invoices');
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating invoice:', error);
-      toast.error('Gagal membuat invoice');
+      toast.error(`Gagal membuat invoice: ${error.message || 'Error tidak diketahui'}`);
     } finally {
       setLoading(false);
     }

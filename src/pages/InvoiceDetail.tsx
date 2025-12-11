@@ -194,23 +194,33 @@ const InvoiceDetail = () => {
                          </tr>
                       ))}
                    </tbody>
+
                    <tfoot className="border-t">
-                       <tr>
-                          <td colSpan={2} className="py-4 px-4 text-right font-semibold">Subtotal</td>
-                          <td className="py-4 px-4 text-right">
-                             {formatCurrency(invoice.invoice_service_details.reduce((sum, item) => sum + item.subtotal, 0))}
-                          </td>
-                       </tr>
-                       {invoice.discount && invoice.discount > 0 && (
-                         <tr>
-                            <td colSpan={2} className="py-2 px-4 text-right font-semibold text-muted-foreground">Diskon</td>
-                            <td className="py-2 px-4 text-right text-muted-foreground">- {formatCurrency(invoice.discount)}</td>
-                         </tr>
-                       )}
-                       <tr>
-                          <td colSpan={2} className="py-4 px-4 text-right font-bold text-lg">Total</td>
-                          <td className="py-4 px-4 text-right font-bold text-xl text-accent">{formatCurrency(invoice.total_amount)}</td>
-                       </tr>
+                       {(() => {
+                         const subtotal = invoice.invoice_service_details.reduce((sum, item) => sum + item.subtotal, 0);
+                         const inferredDiscount = Math.max(0, subtotal - invoice.total_amount);
+                         
+                         return (
+                           <>
+                             <tr>
+                               <td colSpan={2} className="py-4 px-4 text-right font-semibold">Subtotal</td>
+                               <td className="py-4 px-4 text-right">
+                                  {formatCurrency(subtotal)}
+                               </td>
+                             </tr>
+                             {inferredDiscount > 0 && (
+                               <tr>
+                                  <td colSpan={2} className="py-2 px-4 text-right font-semibold text-muted-foreground">Diskon</td>
+                                  <td className="py-2 px-4 text-right text-muted-foreground">- {formatCurrency(inferredDiscount)}</td>
+                               </tr>
+                             )}
+                             <tr>
+                                <td colSpan={2} className="py-4 px-4 text-right font-bold text-lg">Total</td>
+                                <td className="py-4 px-4 text-right font-bold text-xl text-accent">{formatCurrency(invoice.total_amount)}</td>
+                             </tr>
+                           </>
+                         );
+                       })()}
                     </tfoot>
                 </table>
              </div>
