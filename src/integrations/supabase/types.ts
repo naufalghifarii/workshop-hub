@@ -87,6 +87,7 @@ export type Database = {
           invoice_parent_id: string
           notes: string | null
           total_amount: number | null
+          discount: number | null
           updated_at: string | null
           vehicle_id: string | null
           workshop_id: string | null
@@ -98,6 +99,7 @@ export type Database = {
           invoice_parent_id?: string
           notes?: string | null
           total_amount?: number | null
+          discount?: number | null
           updated_at?: string | null
           vehicle_id?: string | null
           workshop_id?: string | null
@@ -109,6 +111,7 @@ export type Database = {
           invoice_parent_id?: string
           notes?: string | null
           total_amount?: number | null
+          discount?: number | null
           updated_at?: string | null
           vehicle_id?: string | null
           workshop_id?: string | null

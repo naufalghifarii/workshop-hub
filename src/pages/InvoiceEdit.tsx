@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
@@ -49,9 +49,10 @@ interface InvoiceItem {
   package_id?: string; // if part of a package
 }
 
-const InvoiceCreate = () => {
-  const { isStaffOrOwner, user } = useAuth();
+const InvoiceEdit = () => {
+  const { isStaffOrOwner } = useAuth();
   const navigate = useNavigate();
+  const { id } = useParams();
   const [loading, setLoading] = useState(false);
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -88,7 +89,6 @@ const InvoiceCreate = () => {
     try {
       const { data: wsData } = await supabase.from('workshops').select('workshop_id, name');
       setWorkshops(wsData || []);
-      if (wsData && wsData.length > 0) setSelectedWorkshop(wsData[0].workshop_id);
 
       const { data: vRaw } = await supabase.from('vehicles').select('vehicle_id, plate_number, brand, model, user_id');
       
@@ -123,18 +123,94 @@ const InvoiceCreate = () => {
       setVehicles(vehiclesData);
 
       const { data: pkgData } = await supabase.from('packages').select('package_id, name, price');
-      setPackages(pkgData?.map(p => ({ id: p.package_id, name: p.name, price: p.price })) || []);
+      const pkgs = pkgData?.map(p => ({ id: p.package_id, name: p.name, price: p.price })) || [];
+      setPackages(pkgs);
 
       const { data: svcData } = await supabase.from('services').select('service_id, name, price');
-      setServices(svcData?.map(s => ({ id: s.service_id, name: s.name, price: s.price })) || []);
+      const svcs = svcData?.map(s => ({ id: s.service_id, name: s.name, price: s.price })) || [];
+      setServices(svcs);
 
       const { data: spData } = await supabase.from('spareparts').select('sparepart_id, name, price');
-      setSpareparts(spData?.map(s => ({ id: s.sparepart_id, name: s.name, price: s.price })) || []);
+      const parts = spData?.map(s => ({ id: s.sparepart_id, name: s.name, price: s.price })) || [];
+      setSpareparts(parts);
+      
+      // Load existing invoice data after loading masters
+      if (id) {
+          fetchInvoiceData(id, pkgs, svcs, parts);
+      }
 
     } catch (error) {
       console.error('Error fetching initial data:', error);
       toast.error('Gagal memuat data');
     }
+  };
+  
+  const fetchInvoiceData = async (invoiceId: string, availablePackages: Item[], availableServices: Item[], availableSpareparts: Item[]) => {
+      try {
+          const { data: invoice, error } = await supabase
+            .from('invoice_services')
+            .select(`
+                *,
+                invoice_service_details (
+                    quantity, subtotal, package_id, service_id, sparepart_id
+                )
+            `)
+            .eq('invoice_parent_id', invoiceId)
+            .single();
+            
+          if (error) throw error;
+          
+          if (invoice) {
+              setSelectedWorkshop(invoice.workshop_id || '');
+              setSelectedVehicle(invoice.vehicle_id || '');
+              setInvoiceDate(invoice.date || new Date().toISOString().split('T')[0]);
+              setDiscount(invoice.discount?.toString() || '0');
+              setNotes(invoice.notes || '');
+              
+              const loadedItems: InvoiceItem[] = [];
+              
+              invoice.invoice_service_details.forEach((detail: any) => {
+                  let type: 'package' | 'service' | 'sparepart' = 'service';
+                  let item: Item | undefined;
+                  let itemId = '';
+                  
+                  if (detail.package_id) {
+                      type = 'package';
+                      itemId = detail.package_id;
+                      item = availablePackages.find(p => p.id === itemId);
+                  } else if (detail.service_id) {
+                      type = 'service';
+                      itemId = detail.service_id;
+                      item = availableServices.find(s => s.id === itemId);
+                  } else if (detail.sparepart_id) {
+                      type = 'sparepart';
+                      itemId = detail.sparepart_id;
+                      item = availableSpareparts.find(sp => sp.id === itemId);
+                  }
+                  
+                  if (item) {
+                      loadedItems.push({
+                          key: Math.random().toString(36).substr(2, 9),
+                          type,
+                          id: itemId,
+                          name: item.name,
+                          price: item.price, // Note: This uses current price, not historical. Ideally we might want historical.
+                          quantity: detail.quantity,
+                          subtotal: detail.subtotal,
+                          package_id: undefined // We don't easily know if this was a sub-part of a package from this query alone without more logic, but for editing we treat them as individual items unless we group them.
+                          // Limitation: Determining if a sparepart was part of a package bundle is tricky if not explicitly stored. 
+                          // For now, we load them as individual items.
+                      });
+                  }
+              });
+              
+              setInvoiceItems(loadedItems);
+          }
+      } catch (error) {
+          console.error("Error fetching invoice", error);
+          toast.error("Gagal memuat data invoice");
+          navigate('/invoices');
+      }
   };
 
   const handleAddItem = async () => {
@@ -228,34 +304,36 @@ const InvoiceCreate = () => {
       toast.error('Tambahkan item invoice');
       return;
     }
+    if (!id) return;
 
     setLoading(true);
     try {
-      // Generate Invoice Number (Simple timestamp based for now)
-      const dateStr = invoiceDate.replace(/-/g, '');
-      const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const invoiceNumber = `INV/${dateStr}/${randomStr}`;
-
-      // 1. Create Invoice Parent
-      const { data: invoice, error: invError } = await supabase
+      // 1. Update Invoice Parent
+      const { error: invError } = await supabase
         .from('invoice_services')
-        .insert({
+        .update({
           workshop_id: selectedWorkshop,
           vehicle_id: selectedVehicle,
-          invoice_number: invoiceNumber,
           date: invoiceDate,
           total_amount: calculateTotal(),
           discount: parseFloat(discount) || 0,
           notes: notes,
         })
-        .select('invoice_parent_id')
-        .single();
+        .eq('invoice_parent_id', id);
 
       if (invError) throw invError;
 
-      // 2. Create Invoice Details
+      // 2. Clear old Invoice Details
+      const { error: deleteError } = await supabase
+        .from('invoice_service_details')
+        .delete()
+        .eq('invoice_parent_id', id);
+        
+      if (deleteError) throw deleteError;
+
+      // 3. Create new Invoice Details
       const details = invoiceItems.map(item => ({
-        invoice_parent_id: invoice.invoice_parent_id,
+        invoice_parent_id: id,
         item_type: item.type, // Note: We need to map to columns package_id, etc.
         package_id: item.type === 'package' ? item.id : null,
         service_id: item.type === 'service' ? item.id : null,
@@ -264,23 +342,18 @@ const InvoiceCreate = () => {
         subtotal: item.subtotal
       }));
 
-      // Since the table has specific columns for ids, we map correctly above.
-      // But we can't insert 'item_type' if it's not in schema.
-      // The schema has: package_id, service_id, sparepart_id.
-      // So we just insert those.
-      
       const { error: detailsError } = await supabase
         .from('invoice_service_details')
         .insert(details.map(({ item_type, ...rest }) => rest));
 
       if (detailsError) throw detailsError;
 
-      toast.success('Invoice berhasil dibuat');
+      toast.success('Invoice berhasil diperbarui');
       navigate('/invoices');
 
     } catch (error) {
-      console.error('Error creating invoice:', error);
-      toast.error('Gagal membuat invoice');
+      console.error('Error updating invoice:', error);
+      toast.error('Gagal memperbarui invoice');
     } finally {
       setLoading(false);
     }
@@ -294,8 +367,8 @@ const InvoiceCreate = () => {
                 <ArrowLeft className="w-4 h-4" /> Kembali
             </Button>
             <PageHeader
-            title="Buat Invoice Baru"
-            description="Input transaksi servis baru"
+            title="Edit Invoice"
+            description="Ubah data transaksi servis"
             icon={FileText}
             />
         </div>
@@ -472,7 +545,7 @@ const InvoiceCreate = () => {
           <div className="flex justify-end gap-4">
              <Button variant="outline" onClick={() => navigate('/invoices')}>Batal</Button>
              <Button size="lg" onClick={handleSubmit} disabled={loading}>
-                <Save className="w-4 h-4 mr-2" /> Simpan Invoice
+                <Save className="w-4 h-4 mr-2" /> Simpan Perubahan
              </Button>
           </div>
         </div>
@@ -481,4 +554,4 @@ const InvoiceCreate = () => {
   );
 };
 
-export default InvoiceCreate;
+export default InvoiceEdit;

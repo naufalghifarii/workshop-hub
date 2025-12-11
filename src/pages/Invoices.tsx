@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { FileText, Eye, Printer, Plus } from 'lucide-react';
+import { FileText, Eye, Printer, Plus, Trash2, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Invoice {
@@ -55,6 +55,34 @@ const Invoices = () => {
     }).format(amount);
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus invoice ini? Data tidak dapat dikembalikkan.')) return;
+
+    try {
+      // First delete details
+      const { error: detailError } = await supabase
+        .from('invoice_service_details')
+        .delete()
+        .eq('invoice_parent_id', id);
+
+      if (detailError) throw detailError;
+
+      // Then delete parent
+      const { error: parentError } = await supabase
+        .from('invoice_services')
+        .delete()
+        .eq('invoice_parent_id', id);
+
+      if (parentError) throw parentError;
+
+      toast.success('Invoice berhasil dihapus');
+      fetchInvoices();
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+      toast.error('Gagal menghapus invoice');
+    }
+  };
+
   const columns = [
     {
       key: 'invoice_number',
@@ -95,6 +123,31 @@ const Invoices = () => {
           >
             <Eye className="w-4 h-4" />
           </Button>
+          {isStaffOrOwner && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/invoices/edit/${invoice.invoice_parent_id}`);
+                }}
+              >
+                <Pencil className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(invoice.invoice_parent_id);
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </>
+          )}
         </div>
       ),
     },

@@ -106,12 +106,23 @@ const Customers = () => {
 
         // Update role if owner
         if (isOwner && formData.role) {
-          await supabase
+          // Delete existing roles first to ensure 1:1 mapping behavior
+          const { error: deleteError } = await supabase
             .from('user_roles')
-            .upsert({
+            .delete()
+            .eq('user_id', editingCustomer.user_id);
+
+          if (deleteError) throw deleteError;
+
+          // Insert new role
+          const { error: insertError } = await supabase
+            .from('user_roles')
+            .insert({
               user_id: editingCustomer.user_id,
               role: formData.role as 'owner' | 'staff' | 'customer',
-            }, { onConflict: 'user_id,role' });
+            });
+            
+          if (insertError) throw insertError;
         }
 
         toast.success('Customer berhasil diperbarui');
@@ -123,6 +134,36 @@ const Customers = () => {
     } catch (error) {
       console.error('Error saving customer:', error);
       toast.error('Gagal menyimpan customer');
+    }
+  };
+
+  const handleDelete = async (id: string, userId: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data customer ini?')) return;
+
+    try {
+      // Delete role first if owner
+      if (isOwner) {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .delete()
+          .eq('user_id', userId);
+        
+        if (roleError) throw roleError;
+      }
+
+      // Delete profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', id);
+
+      if (profileError) throw profileError;
+
+      toast.success('Customer berhasil dihapus');
+      fetchCustomers();
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      toast.error('Gagal menghapus customer');
     }
   };
 
@@ -202,6 +243,19 @@ const Customers = () => {
           >
             <Pencil className="w-4 h-4" />
           </Button>
+          {isOwner && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-destructive hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(customer.id, customer.user_id);
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       ),
     },

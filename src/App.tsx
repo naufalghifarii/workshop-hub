@@ -15,6 +15,7 @@ import Packages from "./pages/Packages";
 import Spareparts from "./pages/Spareparts";
 import Invoices from "./pages/Invoices";
 import InvoiceCreate from "./pages/InvoiceCreate";
+import InvoiceEdit from "./pages/InvoiceEdit";
 import InvoiceDetail from "./pages/InvoiceDetail";
 import NotFound from "./pages/NotFound";
 
@@ -52,6 +53,7 @@ const AppRoutes = () => {
       <Route path="/spareparts" element={<ProtectedRoute><Spareparts /></ProtectedRoute>} />
       <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
       <Route path="/invoices/new" element={<ProtectedRoute><InvoiceCreate /></ProtectedRoute>} />
+      <Route path="/invoices/edit/:id" element={<ProtectedRoute><InvoiceEdit /></ProtectedRoute>} />
       <Route path="/invoices/:id" element={<ProtectedRoute><InvoiceDetail /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
