@@ -164,7 +164,7 @@ const InvoiceEdit = () => {
               setSelectedWorkshop(invoice.workshop_id || '');
               setSelectedVehicle(invoice.vehicle_id || '');
               setInvoiceDate(invoice.date || new Date().toISOString().split('T')[0]);
-              setDiscount(invoice.discount?.toString() || '0');
+              // Discount is inferred below
               setNotes(invoice.notes || '');
               
               const loadedItems: InvoiceItem[] = [];
@@ -205,6 +205,13 @@ const InvoiceEdit = () => {
               });
               
               setInvoiceItems(loadedItems);
+
+              // Infer discount from total vs subtotal
+              const totalSubtotal = loadedItems.reduce((sum, item) => sum + item.subtotal, 0);
+              const totalAmount = invoice.total_amount || 0;
+              const inferredDiscount = Math.max(0, totalSubtotal - totalAmount);
+              
+              setDiscount(inferredDiscount.toString());
           }
       } catch (error) {
           console.error("Error fetching invoice", error);
@@ -316,7 +323,6 @@ const InvoiceEdit = () => {
           vehicle_id: selectedVehicle,
           date: invoiceDate,
           total_amount: calculateTotal(),
-          discount: parseFloat(discount) || 0,
           notes: notes,
         })
         .eq('invoice_parent_id', id);
@@ -335,7 +341,7 @@ const InvoiceEdit = () => {
       const details = invoiceItems.map(item => ({
         invoice_parent_id: id,
         item_type: item.type, // Note: We need to map to columns package_id, etc.
-        package_id: item.type === 'package' ? item.id : null,
+        package_id: item.type === 'package' ? item.id : (item.package_id || null),
         service_id: item.type === 'service' ? item.id : null,
         sparepart_id: item.type === 'sparepart' ? item.id : null,
         quantity: item.quantity,
@@ -351,9 +357,9 @@ const InvoiceEdit = () => {
       toast.success('Invoice berhasil diperbarui');
       navigate('/invoices');
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating invoice:', error);
-      toast.error('Gagal memperbarui invoice');
+      toast.error(`Gagal memperbarui invoice: ${error.message || 'Error tidak diketahui'}`);
     } finally {
       setLoading(false);
     }
