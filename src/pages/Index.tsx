@@ -17,7 +17,7 @@ const Index = () => {
             </span>
           </div>
           <Link to="/auth">
-            <Button variant="outline" className="border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10">
+            <Button variant="outline" className="border-primary-foreground/20 text-black hover:bg-primary-foreground/10 hover:text-white">
               Masuk
             </Button>
           </Link>

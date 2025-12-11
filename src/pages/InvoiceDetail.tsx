@@ -7,13 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Printer, ArrowLeft } from 'lucide-react';
+import { Printer, ArrowLeft, Pencil } from 'lucide-react';
 
 interface InvoiceDetail {
   invoice_parent_id: string;
   invoice_number: string;
   date: string;
   total_amount: number;
+  discount: number | null;
   notes: string | null;
   workshops: {
     name: string;
@@ -131,9 +132,16 @@ const InvoiceDetail = () => {
             </Button>
             <h1 className="text-2xl font-bold mt-2">Detail Invoice</h1>
           </div>
-          <Button onClick={handlePrint}>
-            <Printer className="w-4 h-4 mr-2" /> Cetak
-          </Button>
+          <div className="flex gap-2">
+            {isStaffOrOwner && (
+                <Button variant="outline" onClick={() => navigate(`/invoices/edit/${id}`)}>
+                    <Pencil className="w-4 h-4 mr-2" /> Edit
+                </Button>
+            )}
+            <Button onClick={handlePrint}>
+                <Printer className="w-4 h-4 mr-2" /> Cetak
+            </Button>
+          </div>
         </div>
 
         <Card className="print:shadow-none print:border-none">
@@ -187,11 +195,23 @@ const InvoiceDetail = () => {
                       ))}
                    </tbody>
                    <tfoot className="border-t">
-                      <tr>
-                         <td colSpan={2} className="py-4 px-4 text-right font-semibold">Total</td>
-                         <td className="py-4 px-4 text-right font-bold text-xl text-accent">{formatCurrency(invoice.total_amount)}</td>
-                      </tr>
-                   </tfoot>
+                       <tr>
+                          <td colSpan={2} className="py-4 px-4 text-right font-semibold">Subtotal</td>
+                          <td className="py-4 px-4 text-right">
+                             {formatCurrency(invoice.invoice_service_details.reduce((sum, item) => sum + item.subtotal, 0))}
+                          </td>
+                       </tr>
+                       {invoice.discount && invoice.discount > 0 && (
+                         <tr>
+                            <td colSpan={2} className="py-2 px-4 text-right font-semibold text-muted-foreground">Diskon</td>
+                            <td className="py-2 px-4 text-right text-muted-foreground">- {formatCurrency(invoice.discount)}</td>
+                         </tr>
+                       )}
+                       <tr>
+                          <td colSpan={2} className="py-4 px-4 text-right font-bold text-lg">Total</td>
+                          <td className="py-4 px-4 text-right font-bold text-xl text-accent">{formatCurrency(invoice.total_amount)}</td>
+                       </tr>
+                    </tfoot>
                 </table>
              </div>
 
